@@ -36,7 +36,7 @@ platform :ios do
     sh("chmod 777 ./replace_code.sh")
     sh("./replace_code.sh #{ENV["SA_GITLAB_PATH"]} #{ENV["SA_GITHUB_PATH"]} #{options[:version]} #{branch}")
     
-    sh("cd #{ENV["SA_GITHUB_PATH"]} && fastlane release version:#{options[:version]} branch:#{branch}")
+    sh("cd #{ENV["SA_GITHUB_PATH"]} && bundle update && fastlane release version:#{options[:version]} branch:#{branch}")
   end
 
   lane :release do |options|
