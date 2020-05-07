@@ -36,27 +36,10 @@ platform :ios do
     sh("chmod 777 ./replace_code.sh")
     sh("./replace_code.sh #{ENV["SA_GITLAB_PATH"]} #{ENV["SA_GITHUB_PATH"]} #{options[:version]} #{branch}")
     
-    sh("cd #{ENV["SA_GITHUB_PATH"]} && fastlane release version:#{options[:version]} branch:#{branch} skip_changelog:true")
+    sh("cd #{ENV["SA_GITHUB_PATH"]} && fastlane release version:#{options[:version]} branch:#{branch}")
   end
 
   lane :release do |options|
-    #Generate a Changelog
-    if options[:skip_changelog] != true
-      changelog = sa_generate_github_milestone_roadmap(
-        milestone: options[:version]
-      )
-      
-      UI.message("Generated Changelog: #{changelog[:title]} #{changelog[:header]} #{changelog[:changelog]}")
-      
-      changelog_path = options[:changelog_path] ? options[:changelog_path] : ENV["DEPLOY_CHANGELOG_PATH"]
-      changelog_insert_delimiter = options[:changelog_insert_delimiter] ? options[:changelog_insert_delimiter] : ENV["DEPLOY_CHANGELOG_DELIMITER"]
-      sa_insert_text_into_file(
-        file_path: changelog_path,
-        text: changelog[:title] + changelog[:header] + changelog[:changelog],
-        insert_delimiter: changelog_insert_delimiter
-      )
-    end
-
     remote = options[:remote] ? options[:remote] : (ENV["DEPLOY_REMOTE"] ? ENV["DEPLOY_REMOTE"] : "origin")
     if prompt(text: "#{options[:version]} has been prepped for release. If you have any additional changes you would like to make to the README or CHANGELOG, please do those before continuing. Would you like to commit, tag, and push #{options[:version]} to #{remote}?".green, boolean: true,ci_input:"y")
       git_add(
@@ -89,6 +72,14 @@ platform :ios do
       UI.error("When finished, commit your changes and create your tag.")
     end
 
+    if options[:skip_github_release] != true      
+      body = sa_read_release_note()
+      sa_create_github_release(
+        tag_name: version,
+        name: version,
+        body: body
+      )
+    end
   end
 
 end
