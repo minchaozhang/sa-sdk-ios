@@ -35,7 +35,7 @@ module Fastlane
           FastlaneCore::ConfigItem.new(key: :file_path,
                                        description: "Path for the file",
                                        is_string: true,
-                                       default_value: "./RELEASENOTE.md"),
+                                       optional: false),
         ]
       end
 

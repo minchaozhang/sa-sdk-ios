@@ -73,10 +73,12 @@ platform :ios do
     end
 
     if options[:skip_github_release] != true      
-      body = sa_read_release_note()
+      body = sa_read_release_note(
+        file_path: "./RELEASENOTE.md"
+      )
       sa_create_github_release(
-        tag_name: version,
-        name: version,
+        tag_name: "v#{options[:version]}",
+        name: "Release #{options[:version]}",
         body: body
       )
     end
