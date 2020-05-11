@@ -82,6 +82,9 @@ platform :ios do
     if !options[:version]
       raise "No version specified!".red
     end
+    if !options[:api_token]
+      raise "No version specified!".red
+    end
 
     file_path = options[:file_path] ? options[:file_path] : (ENV["GITHUB_RELEASE_NOTE"] ? ENV["GITHUB_RELEASE_NOTE"] : "fastlane/RELEASENOTE.md")
     body = sa_read_release_note(
@@ -92,7 +95,7 @@ platform :ios do
     repo=ENV["GITHUB_REPOSITORY"]
     github_release = set_github_release(
       repository_name: "#{owner}/#{repo}",
-      api_token: ENV["GITHUB_TOKEN"],
+      api_token: "#{options[:api_token]}",
       name: "Release #{options[:version]}",
       tag_name: "v#{options[:version]}",
       description: body
@@ -127,6 +130,7 @@ platform :ios do
       github_release(
         version: options[:version], 
         remote: remote,
+        api_token: options[:api_token],
       )
     end
 
@@ -151,7 +155,7 @@ platform :ios do
       skip_replace_code: options[:skip_replace_code]
     )
     
-    sh("cd #{ENV["SA_GITHUB_PATH"]} && fastlane github_push version:#{options[:version]} branch:#{branch}")
+    sh("cd #{ENV["SA_GITHUB_PATH"]} && fastlane github_push version:#{options[:version]} branch:#{branch} api_token:#{options[:api_token]}")
   end
 end
 
