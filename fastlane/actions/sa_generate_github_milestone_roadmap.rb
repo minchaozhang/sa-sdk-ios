@@ -100,7 +100,7 @@ module Fastlane
 
         labels = [params[:added_label_name], params[:updated_label_name], params[:changed_label_name], params[:fixed_label_name], params[:removed_label_name]]
         sections = Array.new
-        labels.each do |label_name|
+        labels.each_with_index do |label_name, index|
           subissues = issues.select {|issue| issue["labels"].any? {|label| label["name"].downcase == label_name.downcase}}
           if subissues.count > 0
             sections << {section: label_name, issues: subissues}
@@ -127,9 +127,7 @@ module Fastlane
         date = DateTime.now
         result = Hash.new
         result[:title] = "\n\n## [#{params[:milestone]}](https://github.com/#{params[:github_owner]}/#{params[:github_repository]}/releases/tag/#{params[:milestone]}) (#{date.strftime("%m/%d/%Y")})"
-        result[:header] = "\nReleased on #{date.strftime("%A, %B %d, %Y")}. All issues associated with this milestone can be found using this [filter](https://github.com/#{params[:github_owner]}/#{params[:github_repository]}/issues?q=milestone%3A#{params[:milestone]}+is%3Aclosed)."
         
-        result[:changelog] = "\n"
         sections.each do |section|
           result[:changelog] << markdown_for_changelog_section(params[:github_owner], params[:github_repository], params[:api_token], section[:section], section[:issues])
         end
