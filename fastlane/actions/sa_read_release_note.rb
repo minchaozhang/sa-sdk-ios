@@ -10,9 +10,9 @@ module Fastlane
       def self.run(params)
         file = File.new("#{params[:file_path]}", "r")
         if file
-          content = file.sysread(20)
-          UI.success("#{params[:file_path]} has been updated")
-          return content
+          content = file.sysread(1000)
+          UI.success("#{params[:file_path]} content: \n #{content} \n")
+          return content.force_encoding('UTF-8')
         else
           raise "No RELEASENOTE found in #{params[:file_path]}".red
         end
