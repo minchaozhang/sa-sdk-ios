@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name         = "mc-sa-gitlab"
+  s.name         = "MCSensorsAnalyticsTest"
   s.version      = "2.0.7"
   s.summary      = "The official iOS SDK of Sensors Analytics."
   s.homepage     = "http://www.sensorsdata.cn"
