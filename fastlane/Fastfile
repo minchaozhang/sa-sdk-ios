@@ -83,7 +83,7 @@ platform :ios do
       raise "No version specified!".red
     end
 
-    file_path = options[:file_path] ? options[:file_path] : (ENV["GITHUB_RELEASE_NOTE"] ? ENV["GITHUB_RELEASE_NOTE"] : "RELEASENOTE.md")
+    file_path = options[:file_path] ? options[:file_path] : (ENV["GITHUB_RELEASE_NOTE"] ? ENV["GITHUB_RELEASE_NOTE"] : "fastlane/RELEASENOTE.md")
     body = sa_read_release_note(
       file_path: file_path
     )
