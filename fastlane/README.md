@@ -55,9 +55,9 @@ fastlane ios github_tag
 fastlane ios github_release
 ```
 
-### ios cocoapod_push
+### ios cocoapods_push
 ```
-fastlane ios cocoapod_push
+fastlane ios cocoapods_push
 ```
 
 ### ios github_push

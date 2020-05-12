@@ -109,9 +109,11 @@ platform :ios do
     )
   end
 
-  lane :cocoapod_push do |options|
+  lane :cocoapods_push do |options|
     pod_push(
-      sources: ["https://github.com/CocoaPods/Specs"], 
+      # path: "#{ENV["FRAMEWORK_NAME"]}.podspec",
+      path: "MCSensorsAnalyticsTest.podspec",
+      # sources: ["https://github.com/CocoaPods/Specs"], 
       allow_warnings: true
     )
   end
@@ -141,7 +143,7 @@ platform :ios do
     end
 
     if options[:skip_pod_push] != true
-      cocoapod_push(
+      cocoapods_push(
         sources: ["https://github.com/CocoaPods/Specs"], 
         allow_warnings: true
       )
