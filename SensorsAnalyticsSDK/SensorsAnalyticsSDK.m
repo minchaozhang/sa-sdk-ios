@@ -76,7 +76,7 @@
 #import "SALog+Private.h"
 #import "SAConsoleLogger.h"
 
-#define VERSION @"4.0.11";
+#define VERSION @"4.0.12";
 
 static NSUInteger const SA_PROPERTY_LENGTH_LIMITATION = 8191;
 
