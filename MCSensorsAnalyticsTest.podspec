@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "MCSensorsAnalyticsTest"
-  s.version      = "4.0.3"
+  s.version      = "4.0.14"
   s.summary      = "The official iOS SDK of Sensors Analytics."
   s.homepage     = "http://www.sensorsdata.cn"
   s.source       = { :git => 'https://github.com/minchaozhang/sa-sdk-ios.git', :tag => "v#{s.version}" } 
