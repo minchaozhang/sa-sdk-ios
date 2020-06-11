@@ -76,7 +76,7 @@
 #import "SALog+Private.h"
 #import "SAConsoleLogger.h"
 
-#define VERSION @"2.0.6-pre"
+#define VERSION @"2.0.8";
 
 static NSUInteger const SA_PROPERTY_LENGTH_LIMITATION = 8191;
 
@@ -195,7 +195,6 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
 
 @property (nonatomic, strong) SASDKRemoteConfig *remoteConfig;
 @property (nonatomic, strong) SAConfigOptions *configOptions;
-@property (nonatomic, strong) SADataEncryptBuilder *encryptBuilder;
 
 #ifndef SENSORS_ANALYTICS_DISABLE_TRACK_DEVICE_ORIENTATION
 @property (nonatomic, strong) SADeviceOrientationManager *deviceOrientationManager;
@@ -897,18 +896,12 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
         SALogError(@"Failed to get records from SQLite.");
         return NO;
     }
-
-    NSInteger recordCount = recordArray.count;
-#ifdef SENSORS_ANALYTICS_ENABLE_ENCRYPTION
-    recordArray = [self.encryptBuilder buildFlushEncryptionDataWithRecords:recordArray];
-#endif
-    
     // 2、上传获取到的记录。如果数据上传完成，结束递归
     if (recordArray.count == 0 || ![self.network flushEvents:recordArray]) {
         return NO;
     }
     // 3、删除已上传的记录。删除失败，结束递归
-    if (![self.messageQueue removeFirstRecords:recordCount withType:@"POST"]) {
+    if (![self.messageQueue removeFirstRecords:recordArray.count withType:@"POST"]) {
         SALogError(@"Failed to remove records from SQLite.");
         return NO;
     }
@@ -1229,8 +1222,11 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
     if (lib_detail) {
         [libProperties setValue:lib_detail forKey:SA_EVENT_COMMON_PROPERTY_LIB_DETAIL];
     }
-    __block NSDictionary *dynamicSuperPropertiesDict = self.dynamicSuperProperties?self.dynamicSuperProperties():nil;
+    
+    __block NSDictionary *dynamicSuperPropertiesDict = [self acquireDynamicSuperProperties];
+    
     UInt64 currentSystemUpTime = [[self class] getSystemUpTime];
+    
     dispatch_async(self.serialQueue, ^{
         //根据当前 event 解析计时操作时加工前的原始 eventName，若当前 event 不是 trackTimerStart 计时操作后返回的字符串，event 和 eventName 一致
         NSString *eventName = [self.trackTimer eventNameFromEventId:event];
@@ -1239,10 +1235,8 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
         if (dynamicSuperPropertiesDict && [dynamicSuperPropertiesDict isKindOfClass:NSDictionary.class] == NO) {
             SALogDebug(@"dynamicSuperProperties  returned: %@  is not an NSDictionary Obj.", dynamicSuperPropertiesDict);
             dynamicSuperPropertiesDict = nil;
-        } else {
-            if ([self assertPropertyTypes:&dynamicSuperPropertiesDict withEventType:@"register_super_properties"] == NO) {
-                dynamicSuperPropertiesDict = nil;
-            }
+        } else if (![self assertPropertyTypes:&dynamicSuperPropertiesDict withEventType:@"register_super_properties"]) {
+            dynamicSuperPropertiesDict = nil;
         }
         //去重
         [self unregisterSameLetterSuperProperties:dynamicSuperPropertiesDict];
@@ -1793,7 +1787,7 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
             }
         } else if ([propertyValue isKindOfClass:[NSArray class]]) {
             NSMutableArray *newArray = nil;
-            for (NSInteger index = 0; index < [propertyValue count]; index++) {
+            for (NSInteger index = 0; index < [(NSArray *)propertyValue count]; index++) {
                 id object = [propertyValue objectAtIndex:index];
                 NSString *string = verifyString(object, &newProperties, &newArray);
                 if (string == nil) {
@@ -1972,9 +1966,20 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
 }
 
 - (void)registerDynamicSuperProperties:(NSDictionary<NSString *, id> *(^)(void)) dynamicSuperProperties {
-    dispatch_async(self.serialQueue, ^{
+    dispatch_async(self.readWriteQueue, ^{
         self.dynamicSuperProperties = dynamicSuperProperties;
     });
+}
+
+- (NSDictionary *)acquireDynamicSuperProperties {
+    // 获取动态公共属性不能放到 self.serialQueue 中，如果 dispatch_async(self.serialQueue, ^{}) 后面有 dispatch_sync(self.serialQueue, ^{}) 可能会出现死锁
+    __block NSDictionary *dynamicSuperPropertiesDict = nil;
+    dispatch_sync(self.readWriteQueue, ^{
+        if (self.dynamicSuperProperties) {
+            dynamicSuperPropertiesDict = self.dynamicSuperProperties();
+        }
+    });
+    return dynamicSuperPropertiesDict;
 }
 
 - (void)trackEventCallback:(BOOL (^)(NSString *eventName, NSMutableDictionary<NSString *, id> *properties))callback {
@@ -2300,13 +2305,6 @@ static SensorsAnalyticsSDK *sharedInstance = nil;
         [_linkHandler clearUtmProperties];
     }
 
-    if ([controller conformsToProtocol:@protocol(SAAutoTracker)] && [controller respondsToSelector:@selector(getTrackProperties)]) {
-        UIViewController<SAAutoTracker> *autoTrackerController = (UIViewController<SAAutoTracker> *)controller;
-        NSDictionary *trackProperties = [autoTrackerController getTrackProperties];
-        if ([SAValidator isValidDictionary:trackProperties]) {
-            [eventProperties addEntriesFromDictionary:trackProperties];
-        }
-    }
     _lastScreenTrackProperties = [eventProperties copy];
 
     NSString *currentScreenUrl;
@@ -2592,7 +2590,7 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
     }
     
     [self shouldRequestRemoteConfig];
-
+    
     // 是否首次启动
     BOOL isFirstStart = NO;
     if (![[NSUserDefaults standardUserDefaults] boolForKey:SA_HAS_LAUNCHED_ONCE]) {
@@ -2813,16 +2811,8 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
 }
 
 - (void)shouldRequestRemoteConfig {
-
-#ifdef SENSORS_ANALYTICS_ENABLE_ENCRYPTION
-    // 如果开启加密，并且未设置公钥（新用户安装或者从未加密版本升级而来），需要及时请求一次远程配置，获取公钥。
-    if (!self.encryptBuilder) {
-        [self requestFunctionalManagermentConfig];
-        return;
-    }
-#endif
-
-     //判断是否符合分散 remoteconfig 请求条件
+    
+    //判断是否符合分散 remoteconfig 请求条件
     if (self.configOptions.disableRandomTimeRequestRemoteConfig || self.configOptions.maxRequestHourInterval < self.configOptions.minRequestHourInterval) {
         [self requestFunctionalManagermentConfig];
         SALogDebug(@"disableRandomTimeRequestRemoteConfig or minHourInterval and maxHourInterval error，Please check the value");
@@ -2886,27 +2876,12 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
                     if (autoTrackMode == nil) {
                         autoTrackMode = [NSNumber numberWithInteger:-1];
                     }
-                    NSMutableDictionary *configToBeSet = nil;
+                    NSDictionary *configToBeSet = nil;
                     if (v) {
-                        configToBeSet = [NSMutableDictionary dictionaryWithDictionary:@{@"v": v, @"configs": @{@"disableSDK": disableSDK, @"disableDebugMode": disableDebugMode, @"autoTrackMode": autoTrackMode}}];
+                        configToBeSet = @{@"v": v, @"configs": @{@"disableSDK": disableSDK, @"disableDebugMode": disableDebugMode, @"autoTrackMode": autoTrackMode}};
                     } else {
-                        configToBeSet =  [NSMutableDictionary dictionaryWithDictionary:@{@"configs": @{@"disableSDK": disableSDK, @"disableDebugMode": disableDebugMode, @"autoTrackMode": autoTrackMode}}];
+                        configToBeSet = @{@"configs": @{@"disableSDK": disableSDK, @"disableDebugMode": disableDebugMode, @"autoTrackMode": autoTrackMode}};
                     }
-
-                    NSDictionary *publicKeyDic = [configDict valueForKeyPath:@"configs.key"];
-                    if (publicKeyDic) {
-                        SASecretKey *secreKey = [[SASecretKey alloc] init];
-                        secreKey.version = [publicKeyDic[@"pkv"] integerValue];
-                        secreKey.key = publicKeyDic[@"public_key"];
-
-                        [self loadSecretKey:secreKey];
-                        if (self.saveSecretKeyCompletion) {
-                            self.saveSecretKeyCompletion(secreKey);
-                        }
-                    }
-
-                    //存储当前 SDK 版本号
-                    [configToBeSet setValue:self.libVersion forKey:@"localLibVersion"];
                     [[NSUserDefaults standardUserDefaults] setObject:configToBeSet forKey:SA_SDK_TRACK_CONFIG];
                     [[NSUserDefaults standardUserDefaults] synchronize];
                 }
@@ -2938,9 +2913,7 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
             return;
         }
         NSURL *url = [NSURL URLWithString:self.configOptions.remoteConfigURL];
-        BOOL shouldAddVersion = [self.remoteConfig.localLibVersion isEqualToString:self.libVersion] && self.encryptBuilder;
-        NSString *configVersion = shouldAddVersion ? self.remoteConfig.v : nil;
-        [self.network functionalManagermentConfigWithRemoteConfigURL:url version:configVersion completion:completion];
+        [self.network functionalManagermentConfigWithRemoteConfigURL:url version:self.remoteConfig.v completion:completion];
     } @catch (NSException *e) {
         SALogError(@"%@ error: %@", self, e);
     }
@@ -3022,19 +2995,6 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
 
 - (SASecurityPolicy *)securityPolicy {
     return self.network.securityPolicy;
-}
-
-#pragma mark - SecretKey
-- (void)loadSecretKey:(SASecretKey *)secretKey {
-    if (secretKey.key.length > 0) {
-        dispatch_async(self.serialQueue, ^{
-            if (self.encryptBuilder) {
-                [self.encryptBuilder updateRSAPublicSecretKey:secretKey];
-            } else {
-                self.encryptBuilder = [[SADataEncryptBuilder alloc] initWithRSAPublicKey:secretKey];
-            }
-        });
-    }
 }
 
 @end
@@ -3211,6 +3171,8 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
 }
 
 - (void)trackFromH5WithEvent:(NSString *)eventInfo enableVerify:(BOOL)enableVerify {
+    __block NSDictionary *dynamicSuperPropertiesDict = [self acquireDynamicSuperProperties];
+    
     dispatch_async(self.serialQueue, ^{
         @try {
             if (eventInfo == nil) {
@@ -3267,9 +3229,17 @@ static void sa_imp_setJSResponderBlockNativeResponder(id obj, SEL cmd, id reactT
                 // track / track_signup 类型的请求，还是要加上各种公共property
                 // 这里注意下顺序，按照优先级从低到高，依次是automaticProperties, superProperties,dynamicSuperPropertiesDict,propertieDict
                 [propertiesDict addEntriesFromDictionary:automaticPropertiesCopy];
-                NSDictionary *dynamicSuperPropertiesDict = self.dynamicSuperProperties?self.dynamicSuperProperties():nil;
-                //去重
+                
+                //获取用户自定义的动态公共属性
+                if (dynamicSuperPropertiesDict && [dynamicSuperPropertiesDict isKindOfClass:NSDictionary.class] == NO) {
+                    SALogDebug(@"dynamicSuperProperties  returned: %@  is not an NSDictionary Obj.", dynamicSuperPropertiesDict);
+                    dynamicSuperPropertiesDict = nil;
+                } else if (![self assertPropertyTypes:&dynamicSuperPropertiesDict withEventType:@"register_super_properties"]) {
+                    dynamicSuperPropertiesDict = nil;
+                }
+                // 去重
                 [self unregisterSameLetterSuperProperties:dynamicSuperPropertiesDict];
+                
                 [propertiesDict addEntriesFromDictionary:self->_superProperties];
                 [propertiesDict addEntriesFromDictionary:dynamicSuperPropertiesDict];
 
